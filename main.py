@@ -5,8 +5,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 TOKEN = os.environ.get("TOKEN")
-
-# তোমার ৪ টা লিংক
 MAIN_LINK = "https://t.me/+aEntewx8u4wxNGM1"
 CAPTION_LINK = "https://t.me/bdcapsoine"
 INCOME_LINK = "https://t.me/freeeraningsite100"
@@ -20,11 +18,9 @@ def home():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👋 স্বাগতম!\n\n"
-        "🎬 ভিডিও পেতে হলে অবশ্যই এই চ্যানেলে জয়েন করতে হবে 👇\n"
-        f"{MAIN_LINK}\n\n"
+        "🎬 ভিডিও পেতে হলে অবশ্যই চ্যানেলে জয়েন করতে হবে।\n\n"
         "⚠️ নিচের সবগুলো চ্যানেলে জয়েন না করলে বট কাজ করবে না।"
     )
-    
     keyboard = [
         [InlineKeyboardButton("💬 ক্যাপশন লাভার", url=CAPTION_LINK)],
         [InlineKeyboardButton("💰 ফ্রি ইনকামের সাইট", url=INCOME_LINK)],
@@ -33,12 +29,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ জয়েন করেছি, চেক করুন", callback_data="check")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup, disable_web_page_preview=True)
+    await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    # এখানে তুমি চাইলে ফোর্স জয়েন চেক লাগাতে পারবে, এখন ছবির মতো সিম্পল ভেরিফাই করে দিলাম
     await query.edit_message_text(
         "✅ ভেরিফিকেশন সফল!\n\nতোমার ভিডিও লিংক রেডি। নিচের বাটনে ক্লিক করো 👇",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎬 ভিডিও দেখুন", url=MAIN_LINK)]])
@@ -52,7 +47,6 @@ def main():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
-    print("Bot Started...")
     application.run_polling()
 
 if __name__ == "__main__":
