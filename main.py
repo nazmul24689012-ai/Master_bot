@@ -1,18 +1,40 @@
+import os
+import threading
 from flask import Flask
-import threadingimport os
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram import Update
+import telebot
 
-TOKEN = os.getenv("BOT_TOKEN")
+# তোমার টোকেন Render থেকে নিবে
+TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN")
 
-async def start(update: Update, ctx):
-    await update.message.reply_text("Bot is Live! ✅")
+if not TOKEN:
+    print("TOKEN পাওয়া যায়নি!")
+    exit(1)
 
-async def echo(update: Update, ctx):
-    await update.message.reply_text(update.message.text)
+bot = telebot.TeleBot(TOKEN)
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
-print("Bot Started")
-app.run_polling()
+# Flask ওয়েব সার্ভার - Render কে Live দেখানোর জন্য
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is Live! ✅"
+
+def run_web():
+    web_app.run(host="0.0.0.0", port=10000)
+
+# ওয়েব সার্ভার আলাদা ভাবে চালু
+threading.Thread(target=run_web).start()
+
+print("Bot Starting...")
+
+# তোমার বটের কমান্ড
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Bot is Live! ✅\nআপনার বট সফল ভাবে কাজ করছে।")
+
+@bot.message_handler(func=lambda m: True)
+def echo_all(message):
+    bot.reply_to(message, f"আপনি বলেছেন: {message.text}")
+
+# বট চালু থাকবে
+bot.infinity_polling()
