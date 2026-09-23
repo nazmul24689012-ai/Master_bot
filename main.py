@@ -1,8 +1,11 @@
 import os
+import logging
 from flask import Flask
 from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.environ.get("TOKEN")
 ADMIN_ID = 6303102857
@@ -12,7 +15,18 @@ CAPTION_LINK = "https://t.me/bdcapsoine"
 INCOME_LINK = "https://t.me/freeeraningsite100"
 APK_LINK = "https://t.me/apk_mster"
 
+PRIVATE_FILE = "private_id.txt"
 PRIVATE_CHANNEL_ID = None
+
+# ID ফাইল থেকে লোড করো যাতে Render রিস্টার্ট হলেও মনে থাকে
+if os.path.exists(PRIVATE_FILE):
+    try:
+        with open(PRIVATE_FILE, "r") as f:
+            PRIVATE_CHANNEL_ID = int(f.read().strip())
+            print(f"LOADED PRIVATE ID: {PRIVATE_CHANNEL_ID}")
+    except:
+        pass
+
 REQUIRED_CHANNELS = ["@bdcapsoine", "@freeeraningsite100", "@apk_mster"]
 verified_users = set()
 
@@ -23,28 +37,40 @@ def home():
 
 async def save_private_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global PRIVATE_CHANNEL_ID
+    # শুধু Admin ই সেট করতে পারবে
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    print(f"Forward detected from {update.effective_user.id}")
     chat_id = None
     
-    # PTB v22.3 এর জন্য নতুন সিস্টেম
+    # নতুন PTB সিস্টেম
     if update.message.forward_origin:
         try:
-            # Channel থেকে forward হলে
-            if hasattr(update.message.forward_origin, 'chat') and update.message.forward_origin.chat:
-                chat_id = update.message.forward_origin.chat.id
-        except:
-            pass
+            origin = update.message.forward_origin
+            if hasattr(origin, 'chat') and origin.chat:
+                chat_id = origin.chat.id
+            elif hasattr(origin, 'sender_chat') and origin.sender_chat:
+                chat_id = origin.sender_chat.id
+        except Exception as e:
+            print(f"forward_origin error: {e}")
     
-    # পুরানো সিস্টেম ব্যাকআপ
+    # পুরানো ব্যাকআপ
     if not chat_id and update.message.forward_from_chat:
         chat_id = update.message.forward_from_chat.id
 
+    print(f"Extracted chat_id: {chat_id}")
+
     if chat_id:
         PRIVATE_CHANNEL_ID = chat_id
-        await update.message.reply_text(f"✅ সেট হয়েছে! ID: {PRIVATE_CHANNEL_ID}\nএবার অটো-কিক চালু।")
+        with open(PRIVATE_FILE, "w") as f:
+            f.write(str(PRIVATE_CHANNEL_ID))
+        await update.message.reply_text(f"✅ সেট হয়েছে! ID: {PRIVATE_CHANNEL_ID}\nএবার অটো-কিক চালু।\n\nএখন বটকে তোমার প্রাইভেট চ্যানেলে Admin বানিয়ে রাখো।")
     else:
-        await update.message.reply_text("❌ ID পাইনি। প্রাইভেট চ্যানেল থেকে Direct Forward করুন, Copy-Paste নয়।")
+        await update.message.reply_text("❌ ID পাইনি।\nপ্রাইভেট চ্যানেল থেকে কোনো পোস্টের উপর চেপে ধরে Forward > এই বটে পাঠাও। Copy-Paste করলে হবে না।")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"/start from {update.effective_user.id}")
     keyboard = [
         [InlineKeyboardButton("💬 ক্যাপশন লাভার", url=CAPTION_LINK)],
         [InlineKeyboardButton("💰 ফ্রি ইনকামের সাইট", url=INCOME_LINK)],
@@ -70,8 +96,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     verified_users.add(user_id)
     await query.edit_message_text("✅ ভেরিফাইড!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎬 ভিডিও দেখুন", url=MAIN_LINK)]]))
 
+# Admin এর জন্য /id কমান্ড - ID সেট হয়েছে কিনা চেক করতে
+async def check_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if PRIVATE_CHANNEL_ID:
+        await update.message.reply_text(f"বর্তমান Private ID: {PRIVATE_CHANNEL_ID}\nঅটো-কিক চালু আছে।")
+    else:
+        await update.message.reply_text("❌ এখনো ID সেট হয়নি। প্রাইভেট চ্যানেল থেকে একটা পোস্ট Forward করো।")
+
 async def auto_check_job(context: ContextTypes.DEFAULT_TYPE):
     if not PRIVATE_CHANNEL_ID or not verified_users: return
+    print(f"Auto checking {len(verified_users)} users...")
     for user_id in list(verified_users):
         for ch in REQUIRED_CHANNELS:
             try:
@@ -80,7 +116,9 @@ async def auto_check_job(context: ContextTypes.DEFAULT_TYPE):
                     try:
                         await context.bot.ban_chat_member(PRIVATE_CHANNEL_ID, user_id)
                         await context.bot.unban_chat_member(PRIVATE_CHANNEL_ID, user_id)
-                    except: pass
+                        print(f"Kicked {user_id} from private")
+                    except Exception as e:
+                        print(f"Kick failed: {e}")
                     verified_users.remove(user_id)
                     try:
                         await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚫 `{user_id}` লিভ নিয়েছে {ch} থেকে, তাই রিমুভ করা হলো।")
@@ -94,11 +132,16 @@ def run_flask():
 
 def main():
     Thread(target=run_flask).start()
+    if not TOKEN:
+        print("TOKEN MISSING!")
+        return
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("id", check_id))
     application.add_handler(MessageHandler(filters.FORWARDED, save_private_id))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.job_queue.run_repeating(auto_check_job, interval=120, first=30)
+    print("Bot Polling Starting...")
     application.run_polling()
 
 if __name__ == "__main__":
