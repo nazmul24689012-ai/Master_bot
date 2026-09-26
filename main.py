@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from flask import Flask
 from threading import Thread
@@ -18,7 +19,11 @@ APK_LINK = "https://t.me/apk_mster"
 PRIVATE_FILE = "private_id.txt"
 PRIVATE_CHANNEL_ID = None
 
-# ID ফাইল থেকে লোড করো যাতে Render রিস্টার্ট হলেও মনে থাকে
+# ===== নতুন ফিচারের জন্য সেটিংস - তোমার নোট অনুযায়ী =====
+TARGET_APK_CHANNEL = "@apk_mster"  # যেখানে পোস্ট হবে
+ALLOWED_SOURCES = ["spdadnan", "pro5app", "editfoldered", "Editfinity_pro"]
+
+# ID ফাইল থেকে লোড
 if os.path.exists(PRIVATE_FILE):
     try:
         with open(PRIVATE_FILE, "r") as f:
@@ -35,16 +40,13 @@ app = Flask(__name__)
 def home():
     return "Bot is Live!"
 
+# ===== তোমার পুরানো সব ফাংশন - হাত দিইনি =====
 async def save_private_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global PRIVATE_CHANNEL_ID
-    # শুধু Admin ই সেট করতে পারবে
     if update.effective_user.id != ADMIN_ID:
         return
-
     print(f"Forward detected from {update.effective_user.id}")
     chat_id = None
-    
-    # নতুন PTB সিস্টেম
     if update.message.forward_origin:
         try:
             origin = update.message.forward_origin
@@ -54,13 +56,9 @@ async def save_private_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id = origin.sender_chat.id
         except Exception as e:
             print(f"forward_origin error: {e}")
-    
-    # পুরানো ব্যাকআপ
     if not chat_id and update.message.forward_from_chat:
         chat_id = update.message.forward_from_chat.id
-
     print(f"Extracted chat_id: {chat_id}")
-
     if chat_id:
         PRIVATE_CHANNEL_ID = chat_id
         with open(PRIVATE_FILE, "w") as f:
@@ -96,7 +94,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     verified_users.add(user_id)
     await query.edit_message_text("✅ ভেরিফাইড!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🎬 ভিডিও দেখুন", url=MAIN_LINK)]]))
 
-# Admin এর জন্য /id কমান্ড - ID সেট হয়েছে কিনা চেক করতে
 async def check_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -126,6 +123,40 @@ async def auto_check_job(context: ContextTypes.DEFAULT_TYPE):
                     break
             except: continue
 
+# ===== নতুন ফিচার: লিংক দিলে apk_mster এ কপি হবে =====
+async def copy_apk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # শুধু তুমি (Admin) পারবে, অন্য কেউ না
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    text = update.message.text or ""
+    if "t.me/" not in text:
+        return
+
+    links = re.findall(r"https://t.me/(\w+)/(\d+)", text)
+    if not links:
+        return
+
+    await update.message.reply_text(f"🔍 {len(links)} টা ফাইল পেয়েছি, @{TARGET_APK_CHANNEL.replace('@','')} তে পোস্ট করছি...")
+
+    success = 0
+    for username, msg_id in links:
+        if username not in ALLOWED_SOURCES:
+            # চাইলে এই চেকটা তুলে দিতে পারো, তাহলে যেকোনো চ্যানেল থেকেই কপি হবে
+            continue
+        try:
+            await context.bot.copy_message(
+                chat_id=TARGET_APK_CHANNEL,
+                from_chat_id=f"@{username}",
+                message_id=int(msg_id)
+            )
+            success += 1
+        except Exception as e:
+            print(f"Copy failed for {username}/{msg_id}: {e}")
+            await update.message.reply_text(f"❌ ফেল: {username}/{msg_id}\nএরর: {e}")
+
+    await update.message.reply_text(f"✅ Done! {success}/{len(links)} টা ফাইল {TARGET_APK_CHANNEL} এ পোস্ট হয়েছে।")
+
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
@@ -138,8 +169,14 @@ def main():
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("id", check_id))
+    
+    # পুরানো হ্যান্ডলার - যেমন ছিল
     application.add_handler(MessageHandler(filters.FORWARDED, save_private_id))
     application.add_handler(CallbackQueryHandler(button_handler))
+    
+    # নতুন হ্যান্ডলার - এটা শুধু তোমার লিংক কপির জন্য
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"t\.me/") & ~filters.FORWARDED & filters.ChatType.PRIVATE, copy_apk_handler))
+
     application.job_queue.run_repeating(auto_check_job, interval=120, first=30)
     print("Bot Polling Starting...")
     application.run_polling()
